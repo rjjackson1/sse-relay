@@ -132,6 +132,7 @@ requires, and the client reassembles them with newlines in between.
 | `-heartbeat` | `15s` | delay between `: ping` frames |
 | `-retry` | `2s` | reconnect delay advertised in the `retry:` field |
 | `-shutdown-timeout` | `10s` | grace period for in-flight requests |
+| `-version` | `false` | print the version and exit |
 
 | Environment | Meaning |
 |---|---|

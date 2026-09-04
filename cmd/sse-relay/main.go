@@ -19,6 +19,13 @@ import (
 	"github.com/rjjackson1/sse-relay/internal/relay"
 )
 
+// version is overridden at build time with:
+//
+//	go build -ldflags "-X main.version=v1.2.3"
+//
+// Left at "dev" for plain `go build` or `go run`.
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "sse-relay:", err)
@@ -33,8 +40,14 @@ func run() error {
 		heartbeat       = flag.Duration("heartbeat", 15*time.Second, "delay between heartbeat comment frames")
 		retry           = flag.Duration("retry", 2*time.Second, "reconnect delay advertised in the retry: field")
 		shutdownTimeout = flag.Duration("shutdown-timeout", 10*time.Second, "grace period for in-flight requests on shutdown")
+		showVersion     = flag.Bool("version", false, "print the version and exit")
 	)
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("sse-relay", version)
+		return nil
+	}
 
 	h := hub.New(*buffer)
 	srv := relay.NewServer(h, relay.Config{

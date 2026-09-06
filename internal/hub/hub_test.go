@@ -2,6 +2,7 @@ package hub
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -246,6 +247,99 @@ func TestHubCloseAllFinishesStreams(t *testing.T) {
 	if !s1.Done() || !s2.Done() {
 		t.Fatal("expected every stream to be done after CloseAll")
 	}
+}
+
+func TestConcurrentPublishAssignsUniqueSequentialIDs(t *testing.T) {
+	h := New(0)
+	s := h.GetOrCreate("a")
+
+	const goroutines = 20
+	const perGoroutine = 50
+	total := goroutines * perGoroutine
+
+	var wg sync.WaitGroup
+	ids := make(chan uint64, total)
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < perGoroutine; j++ {
+				ev, err := s.Publish("x")
+				if err != nil {
+					t.Errorf("Publish: %v", err)
+					return
+				}
+				ids <- ev.ID
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+
+	seen := make(map[uint64]bool, total)
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate event id %d from concurrent Publish", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != total {
+		t.Fatalf("got %d unique ids, want %d", len(seen), total)
+	}
+	for id := uint64(1); id <= uint64(total); id++ {
+		if !seen[id] {
+			t.Fatalf("missing event id %d, ids should be contiguous", id)
+		}
+	}
+
+	if stats := s.Stats(); stats.Events != uint64(total) {
+		t.Fatalf("Stats().Events = %d, want %d", stats.Events, total)
+	}
+}
+
+// TestConcurrentPublishSubscribeCloseUnderRace exercises Publish racing against
+// Subscribe and Close from many goroutines. It relies on -race to catch data
+// races in Stream's locking rather than asserting a specific delivery outcome,
+// since a subscriber may legitimately be dropped for lagging or miss events
+// published before it attached. Finish guarantees every subscriber channel
+// closes eventually, so the test cannot hang.
+func TestConcurrentPublishSubscribeCloseUnderRace(t *testing.T) {
+	h := New(0)
+	s := h.GetOrCreate("a")
+
+	const publishers = 8
+	const subscribers = 8
+	const perPublisher = 100
+
+	var publishWG sync.WaitGroup
+	publishWG.Add(publishers)
+	for i := 0; i < publishers; i++ {
+		go func() {
+			defer publishWG.Done()
+			for j := 0; j < perPublisher; j++ {
+				if _, err := s.Publish("x"); err != nil {
+					return
+				}
+			}
+		}()
+	}
+
+	var subWG sync.WaitGroup
+	subWG.Add(subscribers)
+	for i := 0; i < subscribers; i++ {
+		go func() {
+			defer subWG.Done()
+			sub, _ := s.Subscribe(0, 4)
+			defer sub.Close()
+			for range sub.Events() {
+				// drain until the channel closes, whether from lag or Finish
+			}
+		}()
+	}
+
+	publishWG.Wait()
+	s.Finish()
+	subWG.Wait()
 }
 
 func TestStatsReflectsPublishedEvents(t *testing.T) {

@@ -1,0 +1,34 @@
+[Unit]
+Description=sse-relay - SSE fan-out relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sse-relay
+Group=sse-relay
+ExecStart=/usr/local/bin/sse-relay -addr :8080 -buffer 1024 -heartbeat 15s
+Restart=on-failure
+RestartSec=2s
+
+# RELAY_TOKEN lives here, outside the unit file, so it never ends up in
+# `systemctl cat` output or the journal.
+EnvironmentFile=-/etc/sse-relay/env
+
+# SIGTERM starts the graceful shutdown (finish streams, drain listener);
+# give it real headroom before systemd escalates to SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Process isolation. sse-relay keeps no state on disk, so nothing needs
+# to be writable.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

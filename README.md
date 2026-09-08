@@ -154,6 +154,34 @@ On `SIGINT` or `SIGTERM` the relay finishes every stream first, so open
 subscriptions receive `event: done` and terminate normally, and only then waits
 for the HTTP server to drain.
 
+## Running as a service
+
+`deploy/systemd/sse-relay.service` runs the binary under systemd: a
+dedicated user, a token read from an environment file instead of the unit
+itself, and `TimeoutStopSec` set high enough to cover the graceful shutdown
+described above.
+
+```bash
+go build -o sse-relay .
+sudo install -m 755 sse-relay /usr/local/bin/sse-relay
+
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin sse-relay
+sudo install -d -m 750 -o sse-relay -g sse-relay /etc/sse-relay
+printf 'RELAY_TOKEN=%s\n' "$(openssl rand -hex 32)" | sudo tee /etc/sse-relay/env >/dev/null
+sudo chmod 640 /etc/sse-relay/env
+sudo chown root:sse-relay /etc/sse-relay/env
+
+sudo install -m 644 deploy/systemd/sse-relay.service /etc/systemd/system/sse-relay.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now sse-relay
+```
+
+`systemctl stop sse-relay` sends `SIGTERM`, which the process already
+handles: it finishes every open stream before the listener stops accepting
+connections. Adjust the `ExecStart` flags in the unit file to change the
+listen address or buffer size; edit `/etc/sse-relay/env` and `systemctl
+restart sse-relay` to rotate the token.
+
 ## Test
 
 ```bash

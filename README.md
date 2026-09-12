@@ -182,6 +182,28 @@ connections. Adjust the `ExecStart` flags in the unit file to change the
 listen address or buffer size; edit `/etc/sse-relay/env` and `systemctl
 restart sse-relay` to rotate the token.
 
+## Running with Docker
+
+```bash
+docker build -t sse-relay --build-arg VERSION=$(git describe --tags --always) .
+docker run -d --name sse-relay \
+  -p 8080:8080 \
+  -e RELAY_TOKEN=$(openssl rand -hex 32) \
+  sse-relay -addr :8080 -buffer 1024 -heartbeat 15s
+```
+
+The image is a single static binary on top of `distroless/static`, run as the
+image's built-in nonroot user, so there is no shell inside the container to
+break out to.
+
+`docker stop` sends `SIGTERM` and waits 10 seconds by default before killing
+the container; that matches the default `-shutdown-timeout`, but if you raise
+the flag, raise the grace period to match:
+
+```bash
+docker stop --time 30 sse-relay
+```
+
 ## Test
 
 ```bash
